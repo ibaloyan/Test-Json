@@ -1,0 +1,37 @@
+from __future__ import annotations
+from datetime import datetime
+from airflow.decorators import dag, task
+from airflow.providers.postgres.hooks.postgres import PostgresHook
+
+@dag(dag_id="simple_load_csv_to_postgres",
+     start_date=datetime(2025, 1, 1),
+     schedule_interval=None,
+     catchup=False,
+     tags=["example"])
+def load_csv_dag():
+    @task()
+    def load_csv(
+        csv_path: str,
+        pg_conn_id: str = "postgres_default",
+        target_table: str = "public.my_existing_table",
+    ) -> str:
+        """
+        Very simple: load a local CSV file into an existing Postgres table using COPY.
+        - csv_path: path accessible by the Airflow worker (local filesystem)
+        - target_table: "schema.table" or "table" (defaults to public if no schema)
+        - the CSV is expected to have a header that matches the table columns
+        """
+        hook = PostgresHook(postgres_conn_id=pg_conn_id)
+        conn = hook.get_conn()
+        try:
+            with conn:
+                with conn.cursor() as cur, open(csv_path, "r", encoding="utf-8") as f:
+                    cur.copy_expert(f"COPY {target_table} FROM STDIN WITH CSV HEADER", f)
+            return f"Loaded CSV {csv_path} into {target_table}"
+        finally:
+            conn.close()
+
+    # adjust csv_path and target_table as needed
+    load_csv("/path/on/worker/reprt.csv", pg_conn_id="postgres_default", target_table="public.my_existing_table")
+
+dag = load_csv_dag()
